@@ -15,7 +15,7 @@ class Inline:
         self.ikb = types.InlineKeyboardButton
 
     def cancel_dl(self, text) -> types.InlineKeyboardMarkup:
-        return self.ikm([[self.ikb(text=text, callback_data=f"cancel_dl", style=enums.ButtonStyle.DEFAULT)]])
+        return self.ikm([[self.ikb(text=text, callback_data=f"cancel_dl", style=enums.ButtonStyle.DANGER)]])
 
     def controls(
         self,
@@ -53,7 +53,7 @@ class Inline:
             rows = [
                 [
                     self.ikb(text=_lang["back"], callback_data="help back", style=enums.ButtonStyle.PRIMARY),
-                    self.ikb(text=_lang["close"], callback_data="help close", style=enums.ButtonStyle.DEFAULT),
+                    self.ikb(text=_lang["close"], callback_data="help close", style=enums.ButtonStyle.DANGER),
                 ]
             ]
         else:
