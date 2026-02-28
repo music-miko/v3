@@ -67,17 +67,21 @@ async def update_timer(length=10):
                 timer = "—" * pos + "◉" + "—" * (length - pos - 1)
 
                 if remaining <= 30:
-                    next = queue.get_next(chat_id, check=True)
-                    if next and not next.file_path and not getattr(next, "is_downloading", False):
-                        next.is_downloading = True
-                        async def fetch_next():
+                    # Renamed 'next' to 'next_track' and passed it directly to the async task
+                    next_track = queue.get_next(chat_id, check=True)
+                    if next_track and not next_track.file_path and not getattr(next_track, "is_downloading", False):
+                        next_track.is_downloading = True
+                        
+                        # Pass the track explicitly so it doesn't get overwritten by the loop
+                        async def fetch_next(track):
                             try:
-                                next.file_path = await yt.download(next.id, video=next.video)
+                                track.file_path = await yt.download(track.id, video=track.video)
                             except Exception:
                                 pass
                             finally:
-                                next.is_downloading = False
-                        asyncio.create_task(fetch_next())
+                                track.is_downloading = False
+                                
+                        asyncio.create_task(fetch_next(next_track))
 
                 if remaining < 10:
                     remove = True
