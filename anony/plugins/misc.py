@@ -113,7 +113,7 @@ async def vc_watcher(sleep=15):
             client = await db.get_assistant(chat_id)
             media = queue.get_current(chat_id)
             participants = await client.get_participants(chat_id)
-            if len(participants) < 2 and media.time > 30:
+            if len(participants) < 2 and media.time > 120:
                 _lang = await lang.get_lang(chat_id)
                 try:
                     sent = await app.edit_message_reply_markup(
