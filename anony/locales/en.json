@@ -81,7 +81,7 @@
     "play_resumed": "<emoji id='5456327427795982532'>🪶</emoji> <b>Stream resumed by</b> {0}",
     "play_replayed": "<emoji id='5456327427795982532'>🪶</emoji> <b>Stream replayed by</b> {0}",
     "play_skipped": "<emoji id='5456327427795982532'>🪶</emoji> <b>Stream skipped by</b> {0}",
-    "play_stopped": <emoji id='5456327427795982532'>🪶</emoji> <b>Stream ended by</b> {0}",
+    "play_stopped": "<emoji id='5456327427795982532'>🪶</emoji> <b>Stream ended by</b> {0}",
     "play_seeked": "<emoji id='5456327427795982532'>🪶</emoji> <b>Stream skipped {0} and started from {1} seconds by</b> {2}",
     "play_expired": "This button has expired.",
     "play_unsupported": "Live streams are not supported.",
