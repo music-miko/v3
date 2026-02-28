@@ -3,7 +3,7 @@
 # This file is part of AnonXMusic
 
 
-from pyrogram import types
+from pyrogram import types, enums
 
 from anony import app, config, lang
 from anony.core.lang import lang_codes
@@ -15,7 +15,7 @@ class Inline:
         self.ikb = types.InlineKeyboardButton
 
     def cancel_dl(self, text) -> types.InlineKeyboardMarkup:
-        return self.ikm([[self.ikb(text=text, callback_data=f"cancel_dl")]])
+        return self.ikm([[self.ikb(text=text, callback_data=f"cancel_dl", style=enums.ButtonStyle.DEFAULT)]])
 
     def controls(
         self,
@@ -52,8 +52,8 @@ class Inline:
         if back:
             rows = [
                 [
-                    self.ikb(text=_lang["back"], callback_data="help back"),
-                    self.ikb(text=_lang["close"], callback_data="help close"),
+                    self.ikb(text=_lang["back"], callback_data="help back", style=enums.ButtonStyle.PRIMARY),
+                    self.ikb(text=_lang["close"], callback_data="help close", style=enums.ButtonStyle.DEFAULT),
                 ]
             ]
         else:
@@ -140,12 +140,14 @@ class Inline:
                 self.ikb(
                     text=lang["add_me"],
                     url=f"https://t.me/{app.username}?startgroup=true",
+                    style=enums.ButtonStyle.PRIMARY,
+                    icon_custom_emoji_id=5882207227997066107,
                 )
             ],
-            [self.ikb(text=lang["help"], callback_data="help")],
+            [self.ikb(text=lang["help"], callback_data="help", style=enums.ButtonStyle.DEFAULT, icon_custom_emoji_id=5942734685976138521)],
             [
-                self.ikb(text=lang["support"], url=config.SUPPORT_CHAT),
-                self.ikb(text=lang["channel"], url=config.SUPPORT_CHANNEL),
+                self.ikb(text=lang["support"], url=config.SUPPORT_CHAT, style=enums.ButtonStyle.DEFAULT, icon_custom_emoji_id=6037421444789440735),
+                self.ikb(text=lang["channel"], url=config.SUPPORT_CHANNEL, style=enums.ButtonStyle.DEFAULT, icon_custom_emoji_id=6021418126061605425),
             ],
         ]
         if private:
@@ -154,11 +156,13 @@ class Inline:
                     self.ikb(
                         text=lang["source"],
                         url="https://t.me/ArcBotz",
+                        style=enums.ButtonStyle.DANGER,
+                        icon_custom_emoji_id=5983580310292402968,
                     )
                 ]
             ]
         else:
-            rows += [[self.ikb(text=lang["language"], callback_data="language")]]
+            rows += [[self.ikb(text=lang["language"], callback_data="language", style=enums.ButtonStyle.DEFAULT, icon_custom_emoji_id=5884479287171485878)]]
         return self.ikm(rows)
 
     def yt_key(self, link: str) -> types.InlineKeyboardMarkup:
