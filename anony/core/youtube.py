@@ -2,7 +2,6 @@
 # Licensed under the MIT License.
 # This file is part of AnonXMusic
 
-
 import os
 import re
 import yt_dlp
@@ -107,10 +106,14 @@ class YouTube:
 
     async def download(self, video_id: str, video: bool = False) -> str | None:
         url = self.base + video_id
+        
+        # --- Route AUDIO strictly to the external API ---
         if not video and config.API_KEY and config.API_URL:
+            # The API will return the absolute file path with the correct ext (mp3, m4a, webm)
             if file_path := await self.fallen.download_track(url):
                 return file_path
 
+        # --- Route VIDEO strictly to local yt-dlp ---
         ext = "mp4" if video else "webm"
         filename = f"downloads/{video_id}.{ext}"
 
