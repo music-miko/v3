@@ -5,6 +5,7 @@
 
 import time
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from pyrogram import enums, errors, filters, types
 
@@ -19,23 +20,57 @@ async def _watcher_vc(_, m: types.Message):
 
 
 async def auto_leave():
+    # Define Indian Standard Time (UTC +5:30)
+    IST = timezone(timedelta(hours=5, minutes=30))
+    
     while True:
-        await asyncio.sleep(14400)
+        # Get current time strictly in IST
+        now_ist = datetime.now(IST)
+        target = now_ist.replace(hour=4, minute=45, second=0, microsecond=0)
+        
+        # If 4:45 AM IST has already passed today, schedule for tomorrow
+        if now_ist >= target:
+            target += timedelta(days=1)
+            
+        wait_seconds = (target - now_ist).total_seconds()
+        await asyncio.sleep(wait_seconds)
+        
         for ub in userbot.clients:
+            chats = []
             try:
-                chats = [dialog.chat.id async for dialog in ub.get_dialogs()
-                            if dialog.chat.type in [
-                                enums.ChatType.GROUP, enums.ChatType.SUPERGROUP,
-                            ]][-20:]
-                for chat in chats:
-                    if chat in [app.logger, -1001686672798, -1001549206010]:
-                        continue
-                    if chat in db.active_calls:
-                        continue
-                    await ub.leave_chat(chat)
-                    await asyncio.sleep(5)
+                # Safely gather all dialogs, handling potential floodwaits here too
+                async for dialog in ub.get_dialogs():
+                    if dialog.chat.type in [
+                        enums.ChatType.GROUP, enums.ChatType.SUPERGROUP,
+                    ]:
+                        chats.append(dialog.chat.id)
+            except errors.FloodWait as e:
+                await asyncio.sleep(e.value + 2)
             except Exception:
-                continue
+                pass
+                
+            for chat in chats:
+                if chat in [app.logger, -1001686672798, -1001549206010]:
+                    continue
+                if chat in db.active_calls:
+                    continue
+                
+                # FloodWait Retry mechanism (Tries up to 3 times per chat)
+                retries = 3
+                while retries > 0:
+                    try:
+                        await ub.leave_chat(chat)
+                        await asyncio.sleep(5)  # Safe delay between leaves
+                        break  # Break out of the retry loop on success
+                        
+                    except errors.FloodWait as e:
+                        # If Telegram says wait, sleep for the penalty time + 2s buffer
+                        await asyncio.sleep(e.value + 2)
+                        retries -= 1
+                        
+                    except Exception:
+                        # Break out of loop for other errors (e.g. already left, banned, etc.)
+                        break
 
 
 async def track_time():
