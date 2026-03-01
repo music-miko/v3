@@ -26,7 +26,7 @@ async def auto_leave():
     
     while True:
         now_ist = datetime.now(IST)
-        target = now_ist.replace(hour=5, minute=15, second=0, microsecond=0)
+        target = now_ist.replace(hour=5, minute=30, second=0, microsecond=0)
         
         # If 4:45 AM IST has already passed today, schedule for tomorrow
         if now_ist >= target:
