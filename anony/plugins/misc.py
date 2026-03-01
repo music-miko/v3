@@ -5,11 +5,12 @@
 
 import time
 import asyncio
-from datetime import datetime, timedelta, timezone
+import pytz
+from datetime import datetime, timedelta
 
 from pyrogram import enums, errors, filters, types
 
-from anony import anon, app, config, db, lang, queue, tasks, userbot, yt
+from anony import anon, app, config, db, lang, logger, queue, tasks, userbot, yt
 from anony.helpers import buttons
 
 
@@ -20,33 +21,39 @@ async def _watcher_vc(_, m: types.Message):
 
 
 async def auto_leave():
-    # Define Indian Standard Time (UTC +5:30)
-    IST = timezone(timedelta(hours=5, minutes=30))
+    # Use pytz just like your old working script for reliable IST
+    IST = pytz.timezone("Asia/Kolkata")
     
     while True:
-        # Get current time strictly in IST
         now_ist = datetime.now(IST)
-        target = now_ist.replace(hour=4, minute=45, second=0, microsecond=0)
+        target = now_ist.replace(hour=5, minute=15, second=0, microsecond=0)
         
         # If 4:45 AM IST has already passed today, schedule for tomorrow
         if now_ist >= target:
             target += timedelta(days=1)
             
         wait_seconds = (target - now_ist).total_seconds()
+        
+        # Log the sleep schedule to the terminal so you know it's working
+        logger.info(f"Next Auto-Leave scheduled for: {target.strftime('%Y-%m-%d %H:%M:%S %Z')} (Sleeping for {int(wait_seconds)}s)")
         await asyncio.sleep(wait_seconds)
+        
+        logger.info("Starting Auto-Leave cleanup cycle...")
         
         for ub in userbot.clients:
             chats = []
             try:
-                # Safely gather all dialogs, handling potential floodwaits here too
+                # Safely gather all dialogs, handling potential floodwaits
                 async for dialog in ub.get_dialogs():
                     if dialog.chat.type in [
                         enums.ChatType.GROUP, enums.ChatType.SUPERGROUP,
                     ]:
                         chats.append(dialog.chat.id)
             except errors.FloodWait as e:
+                logger.warning(f"FloodWait encountered while fetching dialogs: {e.value}s")
                 await asyncio.sleep(e.value + 2)
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error fetching dialogs: {e}")
                 pass
                 
             for chat in chats:
@@ -55,22 +62,26 @@ async def auto_leave():
                 if chat in db.active_calls:
                     continue
                 
-                # FloodWait Retry mechanism (Tries up to 3 times per chat)
+                # FloodWait Retry mechanism
                 retries = 3
                 while retries > 0:
                     try:
                         await ub.leave_chat(chat)
+                        logger.info(f"Userbot successfully left chat ID: {chat}")
                         await asyncio.sleep(5)  # Safe delay between leaves
                         break  # Break out of the retry loop on success
                         
                     except errors.FloodWait as e:
                         # If Telegram says wait, sleep for the penalty time + 2s buffer
+                        logger.warning(f"FloodWait of {e.value}s while leaving {chat}. Retrying...")
                         await asyncio.sleep(e.value + 2)
                         retries -= 1
                         
-                    except Exception:
+                    except Exception as e:
                         # Break out of loop for other errors (e.g. already left, banned, etc.)
                         break
+                        
+        logger.info("Auto-Leave cleanup cycle completed.")
 
 
 async def track_time():
@@ -166,7 +177,9 @@ async def vc_watcher(sleep=15):
 
 if config.AUTO_END:
     tasks.append(asyncio.create_task(vc_watcher()))
-if config.AUTO_LEAVE:
-    tasks.append(asyncio.create_task(auto_leave()))
+
+# Made this true always as requested
+tasks.append(asyncio.create_task(auto_leave()))
+
 tasks.append(asyncio.create_task(track_time()))
 tasks.append(asyncio.create_task(update_timer()))
