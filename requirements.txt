@@ -8,5 +8,6 @@ py-tgcalls~=2.2.10
 py-yt-search~=0.5.7
 python-dotenv~=1.2.1
 yt-dlp[default]>=2025.12.8
-aiofiles
-pytz
+aiofiles==25.1.0
+pytz==2025.2
+
