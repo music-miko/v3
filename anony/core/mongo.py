@@ -14,10 +14,17 @@ from anony import config, logger, userbot
 class MongoDB:
     def __init__(self):
         """
-        Initialize the MongoDB connection.
+        Initialize the MongoDB connections.
         """
+        # 1. Primary Bot Database Connection
         self.mongo = AsyncMongoClient(config.MONGO_URL, serverSelectionTimeoutMS=12500)
         self.db = self.mongo[config.DB_NAME]
+        
+        # 2. Secondary Media Database Connection
+        self.media_mongo = AsyncMongoClient(config.DB_URI, serverSelectionTimeoutMS=12500)
+        
+        # Directly using "arcapi" and "medias" as requested
+        self.mediadb = self.media_mongo["arcapi"]["medias"]
 
         self.admin_list = {}
         self.active_calls = {}
@@ -44,23 +51,44 @@ class MongoDB:
         self.usersdb = self.db.users
 
     async def connect(self) -> None:
-        """Check if we can connect to the database.
+        """Check if we can connect to the databases.
 
         Raises:
-            SystemExit: If the connection to the database fails.
+            SystemExit: If the connection to the databases fails.
         """
         try:
+            # Ping Primary Database
             start = time()
             await self.mongo.admin.command("ping")
-            logger.info(f"Database connection successful. ({time() - start:.2f}s)")
+            logger.info(f"Primary Database connection successful. ({time() - start:.2f}s)")
+            
+            # Ping Media Database
+            if getattr(config, "DB_URI", None):
+                start_media = time()
+                await self.media_mongo.admin.command("ping")
+                logger.info(f"Media Database connection successful. ({time() - start_media:.2f}s)")
+                
             await self.load_cache()
         except Exception as e:
             raise SystemExit(f"Database connection failed: {type(e).__name__}") from e
 
     async def close(self) -> None:
-        """Close the connection to the database."""
+        """Close the connection to the databases."""
         await self.mongo.close()
-        logger.info("Database connection closed.")
+        await self.media_mongo.close()
+        logger.info("All Database connections closed.")
+
+    # --- NEW: SECONDARY MEDIA DB METHOD ---
+    async def get_media_id(self, track_id: str, is_video: bool = False) -> int | None:
+        """Fetch the cached Telegram message ID for a given track from the secondary media database."""
+        doc = await self.mediadb.find_one({"track_id": track_id, "isVideo": is_video}, {"message_id": 1})
+        if not doc:
+            return None
+        mid = doc.get("message_id")
+        try:
+            return int(mid) if mid else None
+        except (ValueError, TypeError):
+            return None
 
     # CACHE
     async def get_call(self, chat_id: int) -> bool:
@@ -293,7 +321,6 @@ class MongoDB:
         if not self.users:
             self.users.extend([user["_id"] async for user in self.usersdb.find()])
         return self.users
-
 
     async def migrate_coll(self) -> None:
         logger.info("Migrating users and chats from old collections...")
