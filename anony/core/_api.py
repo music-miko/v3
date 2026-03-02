@@ -1,14 +1,16 @@
 import asyncio
 import os
 import re
+import time
 import uuid
+import contextlib
 import aiohttp
 import aiofiles
 from pathlib import Path
 from typing import Optional, Any
 
 from pyrogram import errors
-from anony import app, config, logger
+from anony import app, config, logger, db
 
 # === Polling & Request Settings ===
 JOB_POLL_ATTEMPTS = 15     
@@ -21,6 +23,9 @@ NO_CANDIDATE_WAIT = 4
 CDN_RETRIES = 5
 CDN_RETRY_DELAY = 2
 CHUNK_SIZE = 1024 * 1024
+
+# Circuit Breaker: Stores the timestamp when TG is allowed again
+TG_FLOOD_COOLDOWN = 0.0
 
 
 class FallenApi:
@@ -90,9 +95,75 @@ class FallenApi:
         except: pass
         return None
 
-    async def _download_cdn(self, url: str, out_path: str) -> bool:
-        logger.info(f"🔗 Downloading from CDN: {url}")
+    async def _download_from_media_db(self, track_id: str, is_video: bool, final_path: str) -> Optional[str]:
+        """Attempt to fetch from Telegram channel storage if available."""
+        global TG_FLOOD_COOLDOWN
         
+        media_channel_id = config.MEDIA_CHANNEL_ID
+        if not media_channel_id or not track_id:
+            return None
+
+        if time.time() < TG_FLOOD_COOLDOWN:
+            return None
+
+        try:
+            ch_id = int(media_channel_id)
+        except ValueError:
+            return None
+
+        ext = "mp4" if is_video else "mp3"
+        keys_to_try = [
+            f"{track_id}.{ext}",
+            track_id,
+            f"{track_id}_{'v' if is_video else 'a'}",
+            f"{track_id}_{'v' if is_video else 'a'}.{ext}",
+        ]
+
+        msg_id = None
+        for k in keys_to_try:
+            msg_id = await db.get_media_id(k, is_video)
+            if msg_id:
+                break
+
+        if not msg_id:
+            return None
+
+        tmp_path = final_path + ".temp"
+
+        try:
+            msg = await app.get_messages(ch_id, msg_id)
+            if not msg:
+                return None
+
+            dl_res = await asyncio.wait_for(
+                app.download_media(msg, file_name=tmp_path),
+                timeout=HARD_TIMEOUT
+            )
+
+            if not dl_res or not os.path.exists(dl_res) or os.path.getsize(dl_res) <= 0:
+                with contextlib.suppress(Exception):
+                    if os.path.exists(tmp_path): os.remove(tmp_path)
+                return None
+
+            try:
+                os.replace(dl_res, final_path)
+            except OSError:
+                final_path = dl_res
+
+            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+                return final_path
+
+        except asyncio.TimeoutError:
+            logger.error(f"❌ DB Timeout > {HARD_TIMEOUT}s | ID: {track_id}")
+        except errors.FloodWait as e:
+            TG_FLOOD_COOLDOWN = time.time() + e.value + 5
+            logger.error(f"⚠️ FloodWait in DB Download. Cooldown: {e.value + 5}s")
+        except Exception as e:
+            logger.error(f"DB Download Error: {e}")
+
+        return None
+
+    async def _download_cdn(self, url: str, out_path: str) -> bool:
         # Handle Telegram t.me links natively if the API returns them
         tg_match = re.match(r"https?://t\.me/([^/]+)/(\d+)", url)
         if tg_match:
@@ -101,11 +172,10 @@ class FallenApi:
                 file_path = await msg.download(file_name=out_path)
                 return True if file_path else False
             except errors.FloodWait as e:
-                logger.warning(f"[FLOODWAIT] Sleeping {e.value}s before TG retry.")
                 await asyncio.sleep(e.value)
                 return await self._download_cdn(url, out_path)
             except Exception as e:
-                logger.warning(f"[TG DOWNLOAD ERROR] {e}")
+                logger.error(f"[TG DOWNLOAD ERROR] {e}")
                 return False
 
         # Handle Standard HTTP CDN links
@@ -130,8 +200,9 @@ class FallenApi:
             except asyncio.TimeoutError:
                 if attempt < CDN_RETRIES: await asyncio.sleep(CDN_RETRY_DELAY)
             except Exception as e:
-                logger.error(f"CDN Fail: {e}")
-                if attempt < CDN_RETRIES: await asyncio.sleep(CDN_RETRY_DELAY)
+                if attempt == CDN_RETRIES:
+                    logger.error(f"CDN Fail: {e}")
+                await asyncio.sleep(CDN_RETRY_DELAY)
         
         return False
 
@@ -145,6 +216,16 @@ class FallenApi:
         if out_path.exists() and out_path.stat().st_size > 0:
             return str(out_path)
 
+        # ------------------------------------------------------------------
+        # --- NEW: DIRECT DB DOWNLOAD CHECK ---
+        # ------------------------------------------------------------------
+        db_path = await self._download_from_media_db(vid, video, str(out_path))
+        if db_path and os.path.exists(db_path):
+            return db_path
+
+        # ------------------------------------------------------------------
+        # --- FALLBACK: POLLING API ---
+        # ------------------------------------------------------------------
         if not self.api_url or not self.api_key:
             logger.error("API Creds Missing")
             return None
@@ -155,7 +236,6 @@ class FallenApi:
                 url = f"{self.api_url}/youtube/v2/download"
                 params = {"query": vid, "isVideo": str(video).lower(), "api_key": self.api_key}
                 
-                logger.info(f"📡 API Job Start (Cycle {cycle}): {vid}...")
                 async with session.get(url, params=params) as resp:
                     if resp.status != 200:
                         if cycle < V2_DOWNLOAD_CYCLES: await asyncio.sleep(1); continue
@@ -171,7 +251,6 @@ class FallenApi:
                      job_id = data.get("job").get("id")
 
                 if job_id and not candidate:
-                    logger.info(f"⏳ Polling Job: {job_id}")
                     interval = JOB_POLL_INTERVAL
                     
                     for _ in range(JOB_POLL_ATTEMPTS):
