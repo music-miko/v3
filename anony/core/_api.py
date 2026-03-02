@@ -4,6 +4,7 @@ import re
 import time
 import uuid
 import contextlib
+import urllib.parse
 import aiohttp
 import aiofiles
 from pathlib import Path
@@ -95,7 +96,7 @@ class FallenApi:
         except: pass
         return None
 
-    async def _download_from_media_db(self, track_id: str, is_video: bool, final_path: str) -> Optional[str]:
+    async def _download_from_media_db(self, track_id: str, is_video: bool, file_id: str) -> Optional[str]:
         """Attempt to fetch from Telegram channel storage if available."""
         global TG_FLOOD_COOLDOWN
         
@@ -111,6 +112,7 @@ class FallenApi:
         except ValueError:
             return None
 
+        # Try searching DB for common extensions
         ext = "mp4" if is_video else "mp3"
         keys_to_try = [
             f"{track_id}.{ext}",
@@ -133,8 +135,19 @@ class FallenApi:
             if not msg:
                 return None
 
-            # Pass final_path directly. Pyrogram automatically adds .temp while 
-            # downloading and seamlessly renames it to final_path when 100% complete!
+            # DYNAMIC EXTENSION DETECTION (Reads the exact extension from Telegram)
+            tg_ext = "mp4" if is_video else "mp3"
+            for media_type in (msg.document, msg.audio, msg.video):
+                if media_type and getattr(media_type, "file_name", None):
+                    tg_ext = media_type.file_name.split('.')[-1].lower()
+                    break
+            
+            # Fallback if extension is somehow weird
+            if tg_ext not in ["mp3", "m4a", "webm", "mp4", "mkv"]:
+                tg_ext = "mp4" if is_video else "mp3"
+
+            final_path = str(self.download_dir / f"{file_id}.{tg_ext}")
+
             dl_res = await asyncio.wait_for(
                 app.download_media(msg, file_name=final_path),
                 timeout=HARD_TIMEOUT
@@ -202,16 +215,20 @@ class FallenApi:
         vid = self.extract_safe_id(link) or link 
         file_id = self.extract_safe_id(link) or uuid.uuid4().hex[:10]
         
-        ext = "mp4" if video else "m4a"
-        out_path = self.download_dir / f"{file_id}.{ext}"
-
-        if out_path.exists() and out_path.stat().st_size > 0:
-            return str(out_path)
+        # ------------------------------------------------------------------
+        # --- NEW: DYNAMIC LOCAL DISK CHECK ---
+        # ------------------------------------------------------------------
+        # Check all possible extensions to see if ANY valid file already exists locally
+        possible_exts = ["mp4", "mkv"] if video else ["mp3", "m4a", "webm"]
+        for ext in possible_exts:
+            check_path = self.download_dir / f"{file_id}.{ext}"
+            if check_path.exists() and check_path.stat().st_size > 0:
+                return str(check_path)
 
         # ------------------------------------------------------------------
-        # --- NEW: DIRECT DB DOWNLOAD CHECK ---
+        # --- DB DOWNLOAD CHECK ---
         # ------------------------------------------------------------------
-        db_path = await self._download_from_media_db(vid, video, str(out_path))
+        db_path = await self._download_from_media_db(vid, video, file_id)
         if db_path and os.path.exists(db_path):
             return db_path
 
@@ -275,8 +292,21 @@ class FallenApi:
                      if cycle < V2_DOWNLOAD_CYCLES: await asyncio.sleep(NO_CANDIDATE_WAIT); continue
                      return None
 
-                if await self._download_cdn(final_url, str(out_path)):
-                    return str(out_path)
+                # ------------------------------------------------------------------
+                # --- NEW: DYNAMIC URL PARSING ---
+                # ------------------------------------------------------------------
+                # Read the actual extension provided by the API CDN
+                parsed_path = urllib.parse.urlparse(final_url).path
+                dynamic_ext = os.path.splitext(parsed_path)[1].lstrip('.').lower()
+                
+                # Default back to mp4/mp3 if the API sends weird/no extensions
+                if not dynamic_ext or dynamic_ext not in ["mp3", "m4a", "webm", "mp4", "mkv"]:
+                    dynamic_ext = "mp4" if video else "mp3"
+                    
+                dynamic_out_path = str(self.download_dir / f"{file_id}.{dynamic_ext}")
+
+                if await self._download_cdn(final_url, dynamic_out_path):
+                    return dynamic_out_path
             
             except Exception as e:
                 logger.error(f"API Cycle Error: {e}")
