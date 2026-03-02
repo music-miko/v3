@@ -38,8 +38,6 @@ async def auto_leave():
         logger.info(f"Next Auto-Leave scheduled for: {target.strftime('%Y-%m-%d %H:%M:%S %Z')} (Sleeping for {int(wait_seconds)}s)")
         await asyncio.sleep(wait_seconds)
         
-        logger.info("Starting Auto-Leave cleanup cycle...")
-        
         for ub in userbot.clients:
             chats = []
             try:
@@ -50,10 +48,8 @@ async def auto_leave():
                     ]:
                         chats.append(dialog.chat.id)
             except errors.FloodWait as e:
-                logger.warning(f"FloodWait encountered while fetching dialogs: {e.value}s")
                 await asyncio.sleep(e.value + 2)
-            except Exception as e:
-                logger.error(f"Error fetching dialogs: {e}")
+            except Exception:
                 pass
                 
             for chat in chats:
@@ -67,18 +63,14 @@ async def auto_leave():
                 while retries > 0:
                     try:
                         await ub.leave_chat(chat)
-                        logger.info(f"Userbot successfully left chat ID: {chat}")
                         await asyncio.sleep(5)  # Safe delay between leaves
                         break  # Break out of the retry loop on success
                         
                     except errors.FloodWait as e:
-                        # If Telegram says wait, sleep for the penalty time + 2s buffer
-                        logger.warning(f"FloodWait of {e.value}s while leaving {chat}. Retrying...")
                         await asyncio.sleep(e.value + 2)
                         retries -= 1
                         
                     except Exception as e:
-                        # Break out of loop for other errors (e.g. already left, banned, etc.)
                         break
                         
         logger.info("Auto-Leave cleanup cycle completed.")
