@@ -99,7 +99,7 @@ class FallenApi:
         """Attempt to fetch from Telegram channel storage if available."""
         global TG_FLOOD_COOLDOWN
         
-        media_channel_id = config.MEDIA_CHANNEL_ID
+        media_channel_id = getattr(config, "MEDIA_CHANNEL_ID", None)
         if not media_channel_id or not track_id:
             return None
 
@@ -128,30 +128,22 @@ class FallenApi:
         if not msg_id:
             return None
 
-        tmp_path = final_path + ".temp"
-
         try:
             msg = await app.get_messages(ch_id, msg_id)
             if not msg:
                 return None
 
+            # Pass final_path directly. Pyrogram automatically adds .temp while 
+            # downloading and seamlessly renames it to final_path when 100% complete!
             dl_res = await asyncio.wait_for(
-                app.download_media(msg, file_name=tmp_path),
+                app.download_media(msg, file_name=final_path),
                 timeout=HARD_TIMEOUT
             )
 
             if not dl_res or not os.path.exists(dl_res) or os.path.getsize(dl_res) <= 0:
-                with contextlib.suppress(Exception):
-                    if os.path.exists(tmp_path): os.remove(tmp_path)
                 return None
 
-            try:
-                os.replace(dl_res, final_path)
-            except OSError:
-                final_path = dl_res
-
-            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
-                return final_path
+            return dl_res
 
         except asyncio.TimeoutError:
             logger.error(f"❌ DB Timeout > {HARD_TIMEOUT}s | ID: {track_id}")
