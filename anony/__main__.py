@@ -2,6 +2,8 @@
 # Licensed under the MIT License.
 # This file is part of AnonXMusic
 
+import faulthandler
+faulthandler.enable()
 
 import asyncio
 import signal
