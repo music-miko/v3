@@ -17,6 +17,7 @@ class Bot(pyrogram.Client):
             bot_token=config.BOT_TOKEN,
             parse_mode=pyrogram.enums.ParseMode.HTML,
             max_concurrent_transmissions=7,
+            workers=200,
             link_preview_options=pyrogram.types.LinkPreviewOptions(is_disabled=True),
         )
         self.owner = config.OWNER_ID
