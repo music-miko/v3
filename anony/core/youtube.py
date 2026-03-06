@@ -127,9 +127,11 @@ class YouTube:
             "noplaylist": True,
             "geo_bypass": True,
             "no_warnings": True,
-            "overwrites": False,
+            "overwrites": True,
             "nocheckcertificate": True,
             "cookiefile": cookie,
+            "postprocessor_args": {"ffmpeg": ["-nostdin", "-y"]},
+            "source_address": "0.0.0.0",
         }
 
         if video:
